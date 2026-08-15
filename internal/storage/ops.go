@@ -30,12 +30,12 @@ func timeFromNano(n int64) time.Time {
 const (
 	createSlotSQL = `INSERT INTO slots(id, version, status, current_lease_id, location, created_at, updated_at)
 		VALUES(?, 1, ?, ?, ?, ?, ?)`
-	getSlotSQL    = `SELECT id, version, status, current_lease_id, location, created_at, updated_at FROM slots WHERE id = ?`
-	listSlotsSQL  = `SELECT id, version, status, current_lease_id, location, created_at, updated_at FROM slots`
-	freeSlotSQL   = `SELECT id, version, status, current_lease_id, location, created_at, updated_at FROM slots
+	getSlotSQL   = `SELECT id, version, status, current_lease_id, location, created_at, updated_at FROM slots WHERE id = ?`
+	listSlotsSQL = `SELECT id, version, status, current_lease_id, location, created_at, updated_at FROM slots`
+	freeSlotSQL  = `SELECT id, version, status, current_lease_id, location, created_at, updated_at FROM slots
 		WHERE status = 'active' AND current_lease_id = '' ORDER BY id LIMIT 1`
 	updateSlotSQL = `UPDATE slots
-		SET version = version + 1, status = ?, current_lease_id = ?, location = ?, updated_at = ?
+		SET version = ?, status = ?, current_lease_id = ?, location = ?, updated_at = ?
 		WHERE id = ? AND version = ?`
 )
 
@@ -100,12 +100,12 @@ func (o dbOps) FindFreeSlot(ctx context.Context) (domain.LockerSlot, error) {
 	return scanSlot(o.e.QueryRowContext(ctx, freeSlotSQL))
 }
 
-// UpdateSlot performs a version CAS: it only applies if the stored version
-// matches slot.Version. On success it returns the slot with the bumped version.
+// UpdateSlot persists a domain-mutated slot. Domain mutations bump Version, so
+// the CAS compares the stored row with the immediately preceding version.
 func (o dbOps) UpdateSlot(ctx context.Context, slot domain.LockerSlot, now time.Time) (domain.LockerSlot, error) {
 	res, err := o.e.ExecContext(ctx, updateSlotSQL,
-		string(slot.Status), slot.CurrentLeaseID, slot.Location, nano(now),
-		slot.ID, slot.Version)
+		slot.Version, string(slot.Status), slot.CurrentLeaseID, slot.Location, nano(now),
+		slot.ID, slot.Version-1)
 	if err != nil {
 		return slot, mapErr(err)
 	}
@@ -116,7 +116,6 @@ func (o dbOps) UpdateSlot(ctx context.Context, slot domain.LockerSlot, now time.
 	if n == 0 {
 		return slot, fmt.Errorf("%w: slot %s version mismatch", domain.ErrLeaseConflict, slot.ID)
 	}
-	slot.Version++
 	return slot, nil
 }
 

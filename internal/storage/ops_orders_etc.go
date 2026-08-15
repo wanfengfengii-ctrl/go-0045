@@ -61,10 +61,10 @@ func (o dbOps) ListOrders(ctx context.Context, f OrderFilter) ([]domain.LoanOrde
 const (
 	createLeaseSQL = `INSERT INTO leases(id, slot_id, order_id, epoch, status, version, created_at, expires_at, updated_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	getLeaseSQL          = `SELECT id, slot_id, order_id, epoch, status, version, created_at, expires_at, updated_at FROM leases WHERE id = ?`
-	getActiveLeaseSQL    = `SELECT id, slot_id, order_id, epoch, status, version, created_at, expires_at, updated_at FROM leases WHERE slot_id = ? AND status IN ('active','releasing') LIMIT 1`
-	nextEpochSQL         = `SELECT COALESCE(MAX(epoch), 0) FROM leases WHERE slot_id = ?`
-	updateLeaseSQL       = `UPDATE leases SET status = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?`
+	getLeaseSQL           = `SELECT id, slot_id, order_id, epoch, status, version, created_at, expires_at, updated_at FROM leases WHERE id = ?`
+	getActiveLeaseSQL     = `SELECT id, slot_id, order_id, epoch, status, version, created_at, expires_at, updated_at FROM leases WHERE slot_id = ? AND status IN ('active','releasing') LIMIT 1`
+	nextEpochSQL          = `SELECT COALESCE(MAX(epoch), 0) FROM leases WHERE slot_id = ?`
+	updateLeaseSQL        = `UPDATE leases SET status = ?, version = ?, updated_at = ? WHERE id = ? AND version = ?`
 	listExpiringLeasesSQL = `SELECT id, slot_id, order_id, epoch, status, version, created_at, expires_at, updated_at FROM leases
 		WHERE status IN ('active','releasing') AND expires_at != 0 AND expires_at < ? ORDER BY expires_at`
 )
@@ -128,7 +128,8 @@ func (o dbOps) NextLeaseEpoch(ctx context.Context, slotID string) (int64, error)
 }
 
 func (o dbOps) UpdateLease(ctx context.Context, lease domain.Lease, now time.Time) (domain.Lease, error) {
-	res, err := o.e.ExecContext(ctx, updateLeaseSQL, string(lease.Status), nano(now), lease.ID, lease.Version)
+	res, err := o.e.ExecContext(ctx, updateLeaseSQL,
+		string(lease.Status), lease.Version, nano(now), lease.ID, lease.Version-1)
 	if err != nil {
 		return lease, mapErr(err)
 	}
@@ -139,7 +140,6 @@ func (o dbOps) UpdateLease(ctx context.Context, lease domain.Lease, now time.Tim
 	if n == 0 {
 		return lease, fmt.Errorf("%w: lease %s version mismatch", domain.ErrLeaseConflict, lease.ID)
 	}
-	lease.Version++
 	lease.UpdatedAt = now
 	return lease, nil
 }
@@ -183,7 +183,7 @@ func (o dbOps) ListExpiringLeases(ctx context.Context, now time.Time) ([]domain.
 const (
 	createCredentialSQL = `INSERT INTO credentials(id, order_id, slot_id, hash, status, issued_at, expires_at, consumed_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, 0)`
-	getCredentialSQL    = `SELECT id, order_id, slot_id, hash, status, issued_at, expires_at, consumed_at FROM credentials WHERE hash = ?`
+	getCredentialSQL     = `SELECT id, order_id, slot_id, hash, status, issued_at, expires_at, consumed_at FROM credentials WHERE hash = ?`
 	consumeCredentialSQL = `UPDATE credentials SET status = 'consumed', consumed_at = ? WHERE id = ? AND status = 'issued'`
 )
 
