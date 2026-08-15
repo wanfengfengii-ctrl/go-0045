@@ -102,7 +102,7 @@ func OpenStore(ctx context.Context, path string) (*SQLiteStore, error) {
 // error from fn or the commit the transaction is rolled back.
 func (s *SQLiteStore) InTx(ctx context.Context, fn func(DB) error) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("%w: %v", domain.ErrContextCanceled, err)
+		return fmt.Errorf("%w: %w", domain.ErrContextCanceled, err)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -144,7 +144,7 @@ func mapErr(err error) error {
 		return nil
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("%w: %v", domain.ErrContextCanceled, err)
+		return fmt.Errorf("%w: %w", domain.ErrContextCanceled, err)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: %v", domain.ErrNotFound, err)
