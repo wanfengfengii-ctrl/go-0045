@@ -195,6 +195,12 @@ func (d *Decoder) ReadFrame() (*Frame, error) {
 			return f, nil
 		}
 		if err == errNeedMore {
+			// A resync may have consumed leading garbage while leaving a
+			// complete frame in the buffer. Re-scan it before reading again,
+			// since the underlying reader may already be at EOF.
+			if consumed > 0 {
+				continue
+			}
 			if ferr := d.fill(); ferr != nil {
 				return nil, ferr
 			}
