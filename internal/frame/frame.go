@@ -196,6 +196,9 @@ func (d *Decoder) ReadFrame() (*Frame, error) {
 		}
 		if err == errNeedMore {
 			if ferr := d.fill(); ferr != nil {
+				if ferr == io.EOF && hasFramePrefix(d.buf) {
+					return nil, &FrameError{Kind: "truncated", Detail: fmt.Sprintf("got %d bytes before EOF", len(d.buf))}
+				}
 				return nil, ferr
 			}
 			continue
@@ -204,6 +207,12 @@ func (d *Decoder) ReadFrame() (*Frame, error) {
 		// iteration scans for the marker starting one byte later.
 		return nil, err
 	}
+}
+
+// hasFramePrefix reports whether the buffered bytes could be the beginning of
+// a frame that was cut off at EOF.
+func hasFramePrefix(b []byte) bool {
+	return len(b) > 0 && (indexMarker(b) >= 0 || b[len(b)-1] == Mark0)
 }
 
 // errNeedMore is internal; it signals the caller to read more bytes.
