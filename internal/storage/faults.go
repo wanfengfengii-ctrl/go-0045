@@ -82,7 +82,7 @@ type FaultStore struct {
 
 func (s *FaultStore) InTx(ctx context.Context, fn func(DB) error) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("%w: %v", domain.ErrContextCanceled, err)
+		return fmt.Errorf("%w: %w", domain.ErrContextCanceled, err)
 	}
 	if err := s.f.txErr(); err != nil {
 		return fmt.Errorf("%w: %v", domain.ErrStorageUnavailable, err)
