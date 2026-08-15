@@ -35,9 +35,13 @@ func Open(path string) (*sql.DB, error) {
 	q := url.Values{}
 	q.Set("_txlock", "immediate")
 	q.Set("_busy_timeout", "30000")
-	q.Set("_pragma", "journal_mode(WAL)")
-	q.Set("_pragma", "foreign_keys(1)")
-	q.Set("_pragma", "synchronous(NORMAL)")
+	// Add (not Set): url.Values.Set overwrites, so three Set calls would
+	// leave only the last pragma in the encoded DSN. The modernc driver
+	// applies every _pragma value to each pooled connection, so Add ensures
+	// journal_mode/foreign_keys/synchronous all take effect on every conn.
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "foreign_keys(1)")
+	q.Add("_pragma", "synchronous(NORMAL)")
 	dsn := "file:" + abs + "?" + q.Encode()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
