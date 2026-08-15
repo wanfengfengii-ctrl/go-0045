@@ -194,6 +194,14 @@ func (d *Decoder) ReadFrame() (*Frame, error) {
 		if err == nil {
 			return f, nil
 		}
+		if err == errResync {
+			// Leading garbage was dropped up to a candidate marker. The
+			// buffer may already hold a complete frame, so re-scan it
+			// before asking the reader for more bytes. Calling fill() here
+			// would be wrong: if the reader is at EOF the decoder would
+			// report a plain io.EOF and never deliver the buffered frame.
+			continue
+		}
 		if err == errNeedMore {
 			if ferr := d.fill(); ferr != nil {
 				return nil, ferr
@@ -207,12 +215,22 @@ func (d *Decoder) ReadFrame() (*Frame, error) {
 }
 
 // errNeedMore is internal; it signals the caller to read more bytes.
-var errNeedMore = errors.New("need more data")
+//
+// errResync is internal; it signals that some leading bytes were consumed
+// (typically garbage skipped up to a marker) and the caller must re-scan the
+// existing buffer without reading more data first.
+var (
+	errNeedMore = errors.New("need more data")
+	errResync   = errors.New("resync buffered data")
+)
 
 // tryDecode attempts to decode a frame from the buffer. It returns the decoded
 // frame, the number of leading bytes consumed, and an error. errNeedMore means
-// more bytes must be read. On corrupt data it returns a FrameError and consumed
-// == 1 so the caller drops the leading marker byte and rescans.
+// more bytes must be read from r. errResync means leading bytes were consumed
+// (invalid data skipped up to a candidate marker) and the caller must re-scan
+// the existing buffer before reading more, since a complete frame may already be
+// present. On corrupt data it returns a FrameError and consumed == 1 so the
+// caller drops the leading marker byte and rescans.
 func (d *Decoder) tryDecode() (*Frame, int, error) {
 	// Scan for the start marker.
 	idx := indexMarker(d.buf)
@@ -224,8 +242,11 @@ func (d *Decoder) tryDecode() (*Frame, int, error) {
 		return nil, len(d.buf), errNeedMore
 	}
 	if idx > 0 {
-		// Drop leading garbage up to the marker.
-		return nil, idx, errNeedMore
+		// Drop leading garbage up to the marker, then re-scan the existing
+		// buffer rather than reading more bytes: the marker and a complete
+		// frame may already be present, and a premature fill() could surface
+		// io.EOF from an exhausted reader and lose the buffered frame.
+		return nil, idx, errResync
 	}
 	// idx == 0: buffer starts with a marker.
 	if len(d.buf) < HeaderLen {
