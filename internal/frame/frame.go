@@ -195,7 +195,29 @@ func (d *Decoder) ReadFrame() (*Frame, error) {
 			return f, nil
 		}
 		if err == errNeedMore {
+			// When tryDecode made progress (e.g. dropped leading garbage or
+			// kept a candidate marker byte) the trimmed buffer may already hold
+			// a complete frame, so retry before reading more bytes. Only fetch
+			// more data when no progress was made, i.e. the buffer genuinely
+			// cannot advance without another read.
+			if consumed > 0 {
+				continue
+			}
 			if ferr := d.fill(); ferr != nil {
+				// A clean end of stream arrives with an empty buffer (the last
+				// frame was fully consumed); report that as io.EOF unchanged.
+				// If bytes are still buffered the reader cut off mid-frame, so
+				// classify it as a truncated (corrupt) frame instead of a bare
+				// io.EOF: callers can then audit and retry via the
+				// domain.ErrFrameCorrupt sentinel. The underlying EOF is not
+				// wrapped so errors.Is(err, io.EOF) stays false and the
+				// truncation remains distinguishable from a clean stream end.
+				if len(d.buf) > 0 && errors.Is(ferr, io.EOF) {
+					return nil, &FrameError{
+						Kind:   "truncated",
+						Detail: fmt.Sprintf("unexpected EOF with %d byte(s) of partial frame", len(d.buf)),
+					}
+				}
 				return nil, ferr
 			}
 			continue
