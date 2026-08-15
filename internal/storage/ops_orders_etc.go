@@ -127,8 +127,17 @@ func (o dbOps) NextLeaseEpoch(ctx context.Context, slotID string) (int64, error)
 	return maxEpoch + 1, nil
 }
 
+// UpdateLease performs a version CAS that collaborates with the domain's
+// version-bump convention. The lease mutations (BeginRelease, Release, Expire,
+// Revoke) each bump lease.Version to the next value before saving, so
+// lease.Version is the version the row should become. The CAS guard therefore
+// matches the stored row against the immediately preceding version
+// (lease.Version - 1): the update applies only if no other writer changed the
+// row since it was read. On success the row's version becomes lease.Version and
+// the lease is returned with its UpdatedAt set; a stale version yields a wrap of
+// domain.ErrLeaseConflict.
 func (o dbOps) UpdateLease(ctx context.Context, lease domain.Lease, now time.Time) (domain.Lease, error) {
-	res, err := o.e.ExecContext(ctx, updateLeaseSQL, string(lease.Status), nano(now), lease.ID, lease.Version)
+	res, err := o.e.ExecContext(ctx, updateLeaseSQL, string(lease.Status), nano(now), lease.ID, lease.Version-1)
 	if err != nil {
 		return lease, mapErr(err)
 	}
@@ -139,7 +148,6 @@ func (o dbOps) UpdateLease(ctx context.Context, lease domain.Lease, now time.Tim
 	if n == 0 {
 		return lease, fmt.Errorf("%w: lease %s version mismatch", domain.ErrLeaseConflict, lease.ID)
 	}
-	lease.Version++
 	lease.UpdatedAt = now
 	return lease, nil
 }

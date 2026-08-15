@@ -100,12 +100,19 @@ func (o dbOps) FindFreeSlot(ctx context.Context) (domain.LockerSlot, error) {
 	return scanSlot(o.e.QueryRowContext(ctx, freeSlotSQL))
 }
 
-// UpdateSlot performs a version CAS: it only applies if the stored version
-// matches slot.Version. On success it returns the slot with the bumped version.
+// UpdateSlot performs a version CAS that collaborates with the domain's
+// version-bump convention. The slot mutations (AssignLease, Release,
+// Deactivate, Reactivate) each bump slot.Version to the next value before
+// saving, so slot.Version is the version the row should become. The CAS guard
+// therefore matches the stored row against the immediately preceding version
+// (slot.Version - 1): the update applies only if no other writer changed the
+// row since it was read. On success the row's version becomes slot.Version and
+// the slot is returned as-is; a stale version yields a wrap of
+// domain.ErrLeaseConflict.
 func (o dbOps) UpdateSlot(ctx context.Context, slot domain.LockerSlot, now time.Time) (domain.LockerSlot, error) {
 	res, err := o.e.ExecContext(ctx, updateSlotSQL,
 		string(slot.Status), slot.CurrentLeaseID, slot.Location, nano(now),
-		slot.ID, slot.Version)
+		slot.ID, slot.Version-1)
 	if err != nil {
 		return slot, mapErr(err)
 	}
@@ -116,7 +123,6 @@ func (o dbOps) UpdateSlot(ctx context.Context, slot domain.LockerSlot, now time.
 	if n == 0 {
 		return slot, fmt.Errorf("%w: slot %s version mismatch", domain.ErrLeaseConflict, slot.ID)
 	}
-	slot.Version++
 	return slot, nil
 }
 
