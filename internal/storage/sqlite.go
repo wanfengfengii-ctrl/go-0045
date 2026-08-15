@@ -35,9 +35,9 @@ func Open(path string) (*sql.DB, error) {
 	q := url.Values{}
 	q.Set("_txlock", "immediate")
 	q.Set("_busy_timeout", "30000")
-	q.Set("_pragma", "journal_mode(WAL)")
-	q.Set("_pragma", "foreign_keys(1)")
-	q.Set("_pragma", "synchronous(NORMAL)")
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "foreign_keys(1)")
+	q.Add("_pragma", "synchronous(NORMAL)")
 	dsn := "file:" + abs + "?" + q.Encode()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
